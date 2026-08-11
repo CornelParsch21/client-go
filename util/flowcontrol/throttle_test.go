@@ -18,26 +18,54 @@ package flowcontrol
 
 import (
 	"testing"
+	"time"
 )
 
-func TestReader(t *testing.T) {
-	tb := NewTokenBucketRateLimiter(10, 10)
-	r := NewMeasuredRateLimiter(tb)
-	if r.QPS() != 10 {
-		t.Errorf("Expected QPS to be 10, got %f", r.QPS())
+func TestLimiter(t *testing.T) {
+	RateLimiter := NewTokenBucketRateLimiter(10, 1)
+	RateLimiter.Accept() // consume the one token
+	start := time.Now()
+	RateLimiter.Accept() // block for 100ms
+	end := time.Now()
+	if end.Sub(start) < 90*time.Millisecond {
+		t.Errorf("expected to block for 100ms, only blocked for %v", end.Sub(start))
 	}
 }
 
 func TestTokenBucketRateLimiter_ZeroBurst(t *testing.T) {
 	limiter := NewTokenBucketRateLimiter(10, 0)
 	if !limiter.TryAccept() {
-		t.Error("Expected TryAccept to return true for coerced burst size of 1")
+		t.Error("expected TryAccept to return true for coerced burst of 1")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		limiter.Accept()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Success
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Accept blocked indefinitely with zero burst")
 	}
 }
 
 func TestTokenBucketRateLimiter_NegativeBurst(t *testing.T) {
 	limiter := NewTokenBucketRateLimiter(10, -5)
 	if !limiter.TryAccept() {
-		t.Error("Expected TryAccept to return true for coerced burst size of 1")
+		t.Error("expected TryAccept to return true for coerced burst of 1")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		limiter.Accept()
+		close(done)
+	}()
+	select {
+	case <-done:
+		// Success
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Accept blocked indefinitely with negative burst")
 	}
 }
