@@ -17,6 +17,7 @@ limitations under the License.
 package flowcontrol
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -42,44 +43,29 @@ type tokenBucketRateLimiter struct {
 	qps     float32
 }
 
-// NewTokenBucketRateLimiter creates a rate limiter which implements TokenBucketRateLimiter.
-// The rate limiter is resolved relative to the given clock.
+// NewTokenBucketRateLimiter creates a rate limiter which implements RateLimiter.
 func NewTokenBucketRateLimiter(qps float32, burst int) RateLimiter {
 	if qps > 0 && burst <= 0 {
 		klog.Warningf("RateLimiter burst must be positive. Adjusting burst from %d to 1.", burst)
 		burst = 1
 	}
-	return NewTokenBucketRateLimiterWithClock(qps, burst, RealClock{})
-}
-
-func NewTokenBucketRateLimiterWithClock(qps float32, burst int, clock Clock) RateLimiter {
 	return &tokenBucketRateLimiter{
 		limiter: rate.NewLimiter(rate.Limit(qps), burst),
-		clock:   clock,
+		clock:   RealClock{},
 		qps:     qps,
 	}
 }
 
-type passiveRateLimiter struct {
-	limiter *rate.Limiter
-	clock   Clock
-	qps     float32
-}
+type alwaysSafeRateLimiter struct{}
 
-func NewPassiveRateLimiter(qps float32, burst int) RateLimiter {
-	return NewPassiveRateLimiterWithClock(qps, burst, RealClock{})
-}
+func (alwaysSafeRateLimiter) TryAccept() bool { return true }
+func (alwaysSafeRateLimiter) Accept()         {}
+func (alwaysSafeRateLimiter) Stop()           {}
+func (alwaysSafeRateLimiter) QPS() float32    { return 0 }
 
-func NewPassiveRateLimiterWithClock(qps float32, burst int, clock Clock) RateLimiter {
-	return &passiveRateLimiter{
-		limiter: rate.NewLimiter(rate.Limit(qps), burst),
-		clock:   clock,
-		qps:     qps,
-	}
-}
-
-func (t *tokenBucketRateLimiter) Bandwidth() float32 {
-	return t.qps
+// NewAlwaysSafeRateLimiter creates a rate limiter which always permits operations.
+func NewAlwaysSafeRateLimiter() RateLimiter {
+	return alwaysSafeRateLimiter{}
 }
 
 func (t *tokenBucketRateLimiter) TryAccept() bool {
@@ -88,34 +74,11 @@ func (t *tokenBucketRateLimiter) TryAccept() bool {
 
 // Accept will block until a token becomes available
 func (t *tokenBucketRateLimiter) Accept() {
-	now := t.clock.Now()
-	t.clock.Sleep(t.limiter.ReserveN(now, 1).DelayFrom(now))
+	t.limiter.Wait(context.Background())
 }
 
-func (t *tokenBucketRateLimiter) Stop() {
-}
+func (t *tokenBucketRateLimiter) Stop() {}
 
 func (t *tokenBucketRateLimiter) QPS() float32 {
-	return t.qps
-}
-
-func (t *passiveRateLimiter) Bandwidth() float32 {
-	return t.qps
-}
-
-func (t *passiveRateLimiter) TryAccept() bool {
-	return t.limiter.AllowN(t.clock.Now(), 1)
-}
-
-// Accept will block until a token becomes available
-func (t *passiveRateLimiter) Accept() {
-	now := t.clock.Now()
-	t.clock.Sleep(t.limiter.ReserveN(now, 1).DelayFrom(now))
-}
-
-func (t *passiveRateLimiter) Stop() {
-}
-
-func (t *passiveRateLimiter) QPS() float32 {
 	return t.qps
 }
