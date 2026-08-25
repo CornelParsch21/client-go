@@ -18,8 +18,6 @@ package flowcontrol
 
 import (
 	"context"
-	"sync"
-	"time"
 
 	"golang.org/x/time/rate"
 	"k8s.io/klog/v2"
