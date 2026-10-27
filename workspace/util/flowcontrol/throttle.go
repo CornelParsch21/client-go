@@ -18,10 +18,10 @@ package flowcontrol
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
+	"k8s.io/klog/v2"
 )
 
 type RateLimiter interface {
@@ -36,6 +36,21 @@ type RateLimiter interface {
 	QPS() float32
 }
 
+// Clock allows for injecting a fake clock for testing the rate limiter.
+type Clock interface {
+	Now() time.Time
+	Sleep(d time.Duration)
+}
+
+// RealClock implements the Clock interface using the time package.
+type RealClock struct{}
+
+// Now returns the current time.
+func (RealClock) Now() time.Time { return time.Now() }
+
+// Sleep blocks for the specified duration.
+func (RealClock) Sleep(d time.Duration) { time.Sleep(d) }
+
 type tokenBucketRateLimiter struct {
 	limiter *rate.Limiter
 	clock   Clock
@@ -45,6 +60,7 @@ type tokenBucketRateLimiter struct {
 // NewTokenBucketRateLimiter creates a rate limiter which implements RateLimiter.
 func NewTokenBucketRateLimiter(qps float32, burst int) RateLimiter {
 	if qps > 0 && burst < 1 {
+		klog.Warningf("RateLimiter burst must be positive. Adjusting burst from %d to 1.", burst)
 		burst = 1
 	}
 	return NewTokenBucketRateLimiterWithClock(qps, burst, RealClock{})
@@ -53,6 +69,7 @@ func NewTokenBucketRateLimiter(qps float32, burst int) RateLimiter {
 // NewTokenBucketRateLimiterWithClock creates a rate limiter which implements RateLimiter.
 func NewTokenBucketRateLimiterWithClock(qps float32, burst int, clock Clock) RateLimiter {
 	if qps > 0 && burst < 1 {
+		klog.Warningf("RateLimiter burst must be positive. Adjusting burst from %d to 1.", burst)
 		burst = 1
 	}
 	return &tokenBucketRateLimiter{

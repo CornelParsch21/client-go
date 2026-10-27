@@ -17,8 +17,13 @@ limitations under the License.
 package flowcontrol
 
 import (
+	"bytes"
+	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"k8s.io/klog/v2"
 )
 
 func TestLimiter(t *testing.T) {
@@ -67,5 +72,32 @@ func TestTokenBucketRateLimiter_NegativeBurst(t *testing.T) {
 		// Success
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("Accept blocked indefinitely with negative burst")
+	}
+}
+
+func TestTokenBucketRateLimiter_BurstCoercionWarning(t *testing.T) {
+	var buf bytes.Buffer
+	klog.SetOutput(&buf)
+	klog.LogToStderr(false)
+	defer func() {
+		klog.LogToStderr(true)
+		klog.SetOutput(os.Stderr)
+	}()
+
+	_ = NewTokenBucketRateLimiter(10, 0)
+	klog.Flush()
+
+	out := buf.String()
+	if !strings.Contains(out, "RateLimiter burst must be positive") ||
+		!strings.Contains(out, "Adjusting burst from 0 to 1") {
+		t.Errorf("expected klog warning about burst coercion, got: %q", out)
+	}
+
+	// A valid burst must not produce a warning.
+	buf.Reset()
+	_ = NewTokenBucketRateLimiter(10, 5)
+	klog.Flush()
+	if strings.Contains(buf.String(), "burst must be positive") {
+		t.Errorf("unexpected burst warning for valid configuration, got: %q", buf.String())
 	}
 }

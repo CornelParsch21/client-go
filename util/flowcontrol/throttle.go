@@ -18,7 +18,6 @@ package flowcontrol
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"golang.org/x/time/rate"
@@ -36,6 +35,21 @@ type RateLimiter interface {
 	// QPS returns QPS of this rate limiter
 	QPS() float32
 }
+
+// Clock allows for injecting a fake clock for testing the rate limiter.
+type Clock interface {
+	Now() time.Time
+	Sleep(d time.Duration)
+}
+
+// RealClock implements the Clock interface using the time package.
+type RealClock struct{}
+
+// Now returns the current time.
+func (RealClock) Now() time.Time { return time.Now() }
+
+// Sleep blocks for the specified duration.
+func (RealClock) Sleep(d time.Duration) { time.Sleep(d) }
 
 type tokenBucketRateLimiter struct {
 	limiter *rate.Limiter
